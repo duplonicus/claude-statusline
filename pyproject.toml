@@ -1,0 +1,14 @@
+[project]
+name = "claude-statusline"
+version = "0.1.0"
+description = "Two-row status line for Claude Code: context, rate limits with pace, cost and cache"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
