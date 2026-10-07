@@ -109,12 +109,26 @@ def test_formatters():
     assert [sl.span(s) for s in (45, 300, 9000, 86400, 302400)] == ["45s", "5m", "2h30m", "1d", "3d12h"]
 
 
-def test_cli_end_to_end():
+def test_cli_end_to_end(tmp_path):
     script = os.path.join(SRC, "statusline.py")
-    env = dict(os.environ, COLUMNS="60")
+    env = dict(os.environ, COLUMNS="60", HOME=str(tmp_path))  # its cache goes to a throwaway home
     out = subprocess.run([sys.executable, script], input=json.dumps(FULL), capture_output=True, text=True, env=env)
     lines = out.stdout.splitlines()
     assert out.returncode == 0 and len(lines) == 2
     assert all(sl.width(l) <= 56 for l in lines)
     out = subprocess.run([sys.executable, script], input="not json", capture_output=True, text=True, env=env)
     assert out.returncode == 0 and "Claude" in out.stdout
+    saved = tmp_path / ".cache" / "claude-statusline" / "sessions" / f"{SID}.json"
+    assert json.loads(saved.read_text())["pct"] == 38
+
+
+def test_context_usage_is_saved_per_session_for_hooks(tmp_path):
+    sl.record_context(FULL, now=NOW, folder=str(tmp_path))
+    assert json.loads((tmp_path / f"{SID}.json").read_text()) == {"pct": 38, "t": NOW}
+    assert [p.name for p in tmp_path.iterdir()] == [f"{SID}.json"]  # no temp file left behind
+
+
+def test_context_usage_is_not_saved_without_a_reading_or_with_an_unsafe_id(tmp_path):
+    sl.record_context({"session_id": SID}, folder=str(tmp_path))
+    sl.record_context({"session_id": "../escape", "context_window": {"used_percentage": 5}}, folder=str(tmp_path))
+    assert list(tmp_path.iterdir()) == []

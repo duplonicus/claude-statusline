@@ -20,6 +20,7 @@ RESET = "\x1b[0m"
 SEP = " \x1b[38;5;238m│\x1b[0m "
 GIT_TTL = 5  # seconds; git status can be slow (network or Windows-mounted drives), and this runs on every message
 CACHE_DIR = os.path.expanduser("~/.cache/claude-statusline")
+SESSION_DIR = os.path.join(CACHE_DIR, "sessions")
 WINDOWS = {"five_hour": 5 * 3600, "seven_day": 7 * 86400}
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;;.*?\x07")
@@ -271,11 +272,34 @@ def build(d, cols, now=None, git=git_info):
     return [fit(top, limit), fit(bottom, limit)]
 
 
+def record_context(d, now=None, folder=None):
+    """Save how full the context window is, per session, where a hook can read it.
+
+    Hooks are not told the context usage; the status line is. Writing it here lets a
+    UserPromptSubmit hook warn the session before auto-compact (see README).
+    """
+    sid = d.get("session_id")
+    pct = (d.get("context_window") or {}).get("used_percentage")
+    if not sid or pct is None or not re.fullmatch(r"[A-Za-z0-9_-]+", sid):
+        return
+    folder = folder or SESSION_DIR
+    try:
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, sid + ".json")
+        with open(path + ".tmp", "w") as f:
+            json.dump({"pct": pct, "t": now or time.time()}, f)
+        os.replace(path + ".tmp", path)
+    except OSError:
+        pass
+
+
 def main():
     try:
         data = json.load(sys.stdin)
     except ValueError:
         data = {}
+    if isinstance(data, dict):
+        record_context(data)
     try:
         cols = int(os.environ.get("COLUMNS") or 120)
     except ValueError:

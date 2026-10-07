@@ -62,6 +62,16 @@ It always prints exactly two rows. When a row is too wide, segments shrink and t
 - If a triangle or the reset icon overlaps the text after it, your terminal font is drawing that glyph wider than one cell. The script already puts a space after each for this reason.
 - If the script hits an error it prints the error on the status line. It does not go blank.
 
+## Context usage for hooks
+
+Claude Code hooks are not told how full the context window is. The status line is. So on every refresh this script also writes the figure to `~/.cache/claude-statusline/sessions/<session id>.json`:
+
+```json
+{"pct": 38, "t": 1791392326.4}
+```
+
+A `UserPromptSubmit` hook can read that file by the `session_id` it is given and act on it, for example telling the session to write its handoff notes at 60% instead of losing detail to auto-compact.
+
 ## Tests
 
 ```bash
