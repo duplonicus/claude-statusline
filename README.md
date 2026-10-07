@@ -70,7 +70,7 @@ Claude Code keeps the last answer it fetched for that screen in its config file 
 
 Things to know:
 
-- The number is only as fresh as that cache. Past an hour old, the meter says so: `fable ━━━━━━ 48% ▼ 2 ↻ 3d12h (3h00m old)`.
+- The number is only as fresh as that cache. Opening `/usage` in any session refreshes it. Past an hour old, the meter says so: `fable ━━━━━━ 48% ▼ 2 ↻ 3d12h (3h00m old)`.
 - A reading whose week has already reset is not shown.
 - That file is not a documented interface. If its shape changes, the meter disappears and nothing else breaks.
 
