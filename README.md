@@ -8,7 +8,7 @@ A two-row status line for [Claude Code](https://code.claude.com/docs/en/statusli
 
 **Top row:** model and effort level, directory with git branch and change counts, worktree, PR number, session name, session id.
 
-**Bottom row:** context window used, the 5-hour and 7-day rate limits, session cost, elapsed time, lines added and removed, and how long the prompt cache stays warm.
+**Bottom row:** context window used, the 5-hour and 7-day rate limits, any per-model weekly limit (such as Fable), session cost, elapsed time, lines added and removed, and how long the prompt cache stays warm.
 
 ## The pace marker
 
@@ -61,6 +61,18 @@ It always prints exactly two rows. When a row is too wide, segments shrink and t
 - Git status is cached for 5 seconds per directory in `~/.cache/claude-statusline`, so slow repos do not stall the prompt.
 - If a triangle or the reset icon overlaps the text after it, your terminal font is drawing that glyph wider than one cell. The script already puts a space after each for this reason.
 - If the script hits an error it prints the error on the status line. It does not go blank.
+
+## Per-model weekly limits
+
+The usage screen in Claude Code can show a separate weekly meter for one model. The status line input does not include it: it carries only the 5-hour and 7-day windows.
+
+Claude Code keeps the last answer it fetched for that screen in its config file (`~/.claude.json`, under `cachedUsageUtilization`). This script reads the per-model entries from there and shows each as its own meter, with the same pace marker.
+
+Things to know:
+
+- The number is only as fresh as that cache. Past an hour old, the meter says so: `fable ━━━━━━ 48% ▼ 2 ↻ 3d12h (3h00m old)`.
+- A reading whose week has already reset is not shown.
+- That file is not a documented interface. If its shape changes, the meter disappears and nothing else breaks.
 
 ## Context usage for hooks
 

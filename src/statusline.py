@@ -8,6 +8,7 @@ Reads the session JSON on stdin (https://code.claude.com/docs/en/statusline).
 Segments shrink, then drop, lowest priority first, to fit $COLUMNS.
 Stdlib only, so it starts fast and has nothing to install.
 """
+import datetime
 import hashlib
 import json
 import os
@@ -22,6 +23,8 @@ GIT_TTL = 5  # seconds; git status can be slow (network or Windows-mounted drive
 CACHE_DIR = os.path.expanduser("~/.cache/claude-statusline")
 SESSION_DIR = os.path.join(CACHE_DIR, "sessions")
 WINDOWS = {"five_hour": 5 * 3600, "seven_day": 7 * 86400}
+USAGE_CACHE = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~"), ".claude.json")
+USAGE_OLD = 3600  # past this, a cached reading is shown with its age
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;;.*?\x07")
 
@@ -169,6 +172,31 @@ def limit_variants(label, win, length, now):
     return [head + bar(pct, 6, color) + " " + num + pace + reset, head + num + pace + reset, head + num]
 
 
+def scoped_limits(now, path=None):
+    """Per-model weekly limits (the "Fable" meter on the usage screen), from Claude Code's own cache.
+
+    The status line input carries only the 5-hour and 7-day windows. Claude Code keeps the fuller
+    answer it last fetched for its usage screen in its config file; this reads that. The file is
+    not a documented interface, so anything unexpected means "show nothing". A reading whose
+    window has already reset is dropped: it describes last week.
+    """
+    try:
+        with open(path or USAGE_CACHE) as f:
+            cached = json.load(f)["cachedUsageUtilization"]
+        fetched = cached["fetchedAtMs"] / 1000
+        found = []
+        for item in cached["utilization"]["limits"]:
+            model = ((item.get("scope") or {}).get("model") or {}).get("display_name")
+            if item.get("kind") != "weekly_scoped" or not model or item.get("percent") is None:
+                continue
+            resets = datetime.datetime.fromisoformat(item["resets_at"]).timestamp()
+            if resets > now:
+                found.append({"label": model.lower(), "used_percentage": item["percent"], "resets_at": resets, "age": max(0, now - fetched)})
+        return found
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return []
+
+
 def fit(segments, limit):
     """Join segments; while too wide, step the most droppable one to its next variant."""
     state = [0] * len(segments)
@@ -184,7 +212,7 @@ def fit(segments, limit):
     return render()
 
 
-def build(d, cols, now=None, git=git_info):
+def build(d, cols, now=None, git=git_info, scoped=scoped_limits):
     now = now or time.time()
     limit = max(20, cols - 4)
     top, bottom = [], []  # (priority, [variants]); higher priority number drops first
@@ -246,10 +274,16 @@ def build(d, cols, now=None, git=git_info):
         v = limit_variants(label, rl.get(key) or {}, WINDOWS[key], now)
         if v:
             bottom.append((prio, v))
+    for win in scoped(now) if rl else []:
+        v = limit_variants(win["label"], win, WINDOWS["seven_day"], now)
+        if v and win["age"] > USAGE_OLD:  # say how old the number is; the live windows above are never old
+            v = [x + " " + c(DIM, f"({span(win['age'])} old)") for x in v[:2]] + v[2:]
+        if v:
+            bottom.append((3, v))
     spend = rl.get("spend_limit") or {}
     if spend.get("used_percentage") is not None:
         sp = spend["used_percentage"]
-        bottom.append((3, [c(GREY, "spend ") + c(level(sp, 60, 85), f"{round(sp)}%"), ""]))
+        bottom.append((4, [c(GREY, "spend ") + c(level(sp, 60, 85), f"{round(sp)}%"), ""]))
 
     cost = d.get("cost") or {}
     if cost.get("total_cost_usd"):

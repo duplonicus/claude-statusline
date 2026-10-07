@@ -30,10 +30,11 @@ def sample(now):
     }
 
 
-def render(cols=130):
+def render(cols=160):
     now = time.time()
-    return sl.build(sample(now), cols, now=now, git=lambda cwd: GIT)
+    fable = [{"label": "fable", "used_percentage": 41, "resets_at": now + 302400, "age": 120}]
+    return sl.build(sample(now), cols, now=now, git=lambda cwd: GIT, scoped=lambda now: fable)
 
 
 if __name__ == "__main__":
-    print("\n".join(render(int(sys.argv[1]) if len(sys.argv) > 1 else 130)))
+    print("\n".join(render(int(sys.argv[1]) if len(sys.argv) > 1 else 160)))

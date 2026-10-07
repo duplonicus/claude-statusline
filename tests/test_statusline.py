@@ -35,8 +35,8 @@ def plain(lines):
     return [sl.ANSI_RE.sub("", l) for l in lines]
 
 
-def build(data, cols=200):
-    return plain(sl.build(data, cols, now=NOW, git=lambda cwd: GIT))
+def build(data, cols=200, scoped=lambda now: []):
+    return plain(sl.build(data, cols, now=NOW, git=lambda cwd: GIT, scoped=scoped))
 
 
 def test_full_render_wide():
@@ -112,6 +112,7 @@ def test_formatters():
 def test_cli_end_to_end(tmp_path):
     script = os.path.join(SRC, "statusline.py")
     env = dict(os.environ, COLUMNS="60", HOME=str(tmp_path))  # its cache goes to a throwaway home
+    env.pop("CLAUDE_CONFIG_DIR", None)
     out = subprocess.run([sys.executable, script], input=json.dumps(FULL), capture_output=True, text=True, env=env)
     lines = out.stdout.splitlines()
     assert out.returncode == 0 and len(lines) == 2
@@ -132,3 +133,61 @@ def test_context_usage_is_not_saved_without_a_reading_or_with_an_unsafe_id(tmp_p
     sl.record_context({"session_id": SID}, folder=str(tmp_path))
     sl.record_context({"session_id": "../escape", "context_window": {"used_percentage": 5}}, folder=str(tmp_path))
     assert list(tmp_path.iterdir()) == []
+
+
+# --- per-model weekly limits, read from Claude Code's cached usage data ---------
+
+def usage_cache(tmp_path, limits, fetched=NOW - 60):
+    path = tmp_path / ".claude.json"
+    path.write_text(json.dumps({"cachedUsageUtilization": {"fetchedAtMs": fetched * 1000, "utilization": {"limits": limits}}}))
+    return str(path)
+
+
+def iso(epoch):
+    import datetime
+    return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).isoformat()
+
+
+FABLE = {"kind": "weekly_scoped", "group": "weekly", "percent": 48, "resets_at": iso(NOW + 302400),
+         "scope": {"model": {"id": None, "display_name": "Fable"}, "surface": None}}
+WEEKLY_ALL = {"kind": "weekly_all", "group": "weekly", "percent": 49, "resets_at": iso(NOW + 302400), "scope": None}
+
+
+def test_scoped_limits_picks_only_the_per_model_weekly_meter(tmp_path):
+    found = sl.scoped_limits(NOW, usage_cache(tmp_path, [WEEKLY_ALL, FABLE, {"kind": "session", "percent": 6, "scope": None}]))
+    assert found == [{"label": "fable", "used_percentage": 48, "resets_at": NOW + 302400, "age": 60}]
+
+
+def test_a_reading_from_a_window_that_has_reset_is_dropped(tmp_path):
+    last_week = dict(FABLE, resets_at=iso(NOW - 10))
+    assert sl.scoped_limits(NOW, usage_cache(tmp_path, [last_week])) == []
+
+
+@pytest.mark.parametrize("content", ["", "not json", "{}", '{"cachedUsageUtilization": null}',
+                                     '{"cachedUsageUtilization": {"fetchedAtMs": 1, "utilization": {"limits": [{"kind": "weekly_scoped", "percent": 5, "resets_at": 7, "scope": {"model": {"display_name": "X"}}}]}}}'])
+def test_a_missing_or_unexpected_cache_shows_nothing(tmp_path, content):
+    path = tmp_path / ".claude.json"
+    path.write_text(content)
+    assert sl.scoped_limits(NOW, str(path)) == []
+    assert sl.scoped_limits(NOW, str(tmp_path / "absent.json")) == []
+
+
+def test_fable_meter_renders_between_the_weekly_limit_and_the_cost(tmp_path):
+    fresh = lambda now: sl.scoped_limits(now, usage_cache(tmp_path, [WEEKLY_ALL, FABLE]))
+    bottom = build(FULL, scoped=fresh)[1]
+    # half the week gone, 48% used: 2 under pace
+    assert "│ 7d ━━━━━━ 8% ▼ 42 ↻ 3d12h │ fable ━━━━━━ 48% ▼ 2 ↻ 3d12h │ $1.23 │" in bottom
+
+
+def test_an_old_reading_says_how_old_it_is(tmp_path):
+    stale = lambda now: sl.scoped_limits(now, usage_cache(tmp_path, [FABLE], fetched=NOW - 3 * 3600))
+    assert "fable ━━━━━━ 48% ▼ 2 ↻ 3d12h (3h00m old) │" in build(FULL, scoped=stale)[1]
+
+
+def test_fable_meter_needs_rate_limit_data_and_never_breaks_the_two_rows(tmp_path):
+    fresh = lambda now: sl.scoped_limits(now, usage_cache(tmp_path, [FABLE]))
+    assert "fable" not in build({}, scoped=fresh)[1]
+    for cols in (200, 120, 90, 70, 50):
+        lines = build(FULL, cols, scoped=fresh)
+        assert len(lines) == 2 and all(len(l) <= max(20, cols - 4) for l in lines), (cols, lines)
+        assert "ctx" in lines[1] and "38%" in lines[1]
