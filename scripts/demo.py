@@ -21,7 +21,7 @@ def sample(now):
         "effort": {"level": "high"},
         "workspace": {"current_dir": os.path.expanduser("~/dev/myproject")},
         "cost": {"total_cost_usd": 1.23, "total_duration_ms": 754000, "total_lines_added": 156, "total_lines_removed": 23},
-        "context_window": {"total_input_tokens": 76000, "context_window_size": 200000, "used_percentage": 38},
+        "context_window": {"total_input_tokens": 380000, "context_window_size": 1000000, "used_percentage": 38},
         "rate_limits": {
             "five_hour": {"used_percentage": 62, "resets_at": now + 9000},  # half gone, 62% used: over pace
             "seven_day": {"used_percentage": 30, "resets_at": now + 302400},  # half gone, 30% used: under
