@@ -57,7 +57,7 @@ It always prints exactly two rows. When a row is too wide, segments shrink and t
 
 ## Notes
 
-- Segments only appear when Claude Code sends the data. The rate-limit gauges need a subscription plan; cost shows once the session has spent something.
+- Segments only appear when Claude Code sends the data. The rate-limit gauges show only when the session JSON includes rate-limit data; cost shows once the session has spent something.
 - Git status is cached for 5 seconds per directory in `~/.cache/claude-statusline`, so slow repos do not stall the prompt.
 - If a triangle or the reset icon overlaps the text after it, your terminal font is drawing that glyph wider than one cell. The script already puts a space after each for this reason.
 - If the script hits an error it prints the error on the status line. It does not go blank.
