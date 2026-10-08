@@ -43,7 +43,7 @@ def test_full_render_wide():
     top, bottom = build(FULL)
     assert top == f"Opus 5.5 xhigh │ ~/dev/myproject main +1 ~3 ↑2 │ PR #12 │ statusline design │ id {SID}"
     assert bottom == (
-        "ctx ━━━━━━━━━━━━ 38% 76k/200k │ 5h ━━━━━━ 42% ▼ 8 ↻ 2h30m │ 7d ━━━━━━ 8% ▼ 42 ↻ 3d12h"
+        "ctx ━━━━╸━━━━━━━ 38% 76k/200k │ 5h ━━╸━━━ 42% ▼ 8 ↻ 2h30m │ 7d ╸━━━━━ 8% ▼ 42 ↻ 3d12h"
         " │ $1.23 │ 12m │ +156 -23 │ cache 43m"
     )
 
@@ -73,7 +73,7 @@ def test_empty_and_null_input_does_not_crash():
 
 def test_expired_limit_window_has_no_reset_or_pace():
     d = {"rate_limits": {"five_hour": {"used_percentage": 42, "resets_at": NOW - 5}}}
-    assert build(d)[1].endswith("5h ━━━━━━ 42%")
+    assert build(d)[1].endswith("5h ━━╸━━━ 42%")
 
 
 def test_cold_cache_and_colour_thresholds():
@@ -82,12 +82,29 @@ def test_cold_cache_and_colour_thresholds():
     assert sl.level(49, 50, 80) == sl.GREEN and sl.level(50, 50, 80) == sl.YELLOW and sl.level(80, 50, 80) == sl.RED
 
 
-@pytest.mark.parametrize("pct,filled", [(0, 0), (1, 1), (50, 6), (100, 12), (140, 12)])
-def test_bar_is_always_exactly_n_cells(pct, filled):
+@pytest.mark.parametrize("pct,halves", [(0, 0), (1, 1), (4, 1), (50, 12), (100, 24), (140, 24)])
+def test_bar_is_always_exactly_n_cells(pct, halves):
     raw = sl.bar(pct, 12, sl.GREEN)
+    full, half = divmod(halves, 2)
     assert sl.width(raw) == 12
-    assert raw.count("━") == 12
-    assert raw.startswith(f"\x1b[38;5;{sl.GREEN}m" + "━" * filled + sl.RESET)
+    assert raw.count("━") + raw.count("╸") == 12
+    assert raw.startswith(f"\x1b[38;5;{sl.GREEN}m" + "━" * full + "╸" * half + sl.RESET)
+
+
+def filled_halves(raw):
+    lit = raw.split(sl.RESET)[0]
+    return lit.count("━") * 2 + lit.count("╸")
+
+
+def test_bar_resolves_half_cells():
+    # 2% and 20% used to light the same single cell of a 6-cell meter
+    assert filled_halves(sl.bar(2, 6, sl.GREEN)) == 1
+    assert filled_halves(sl.bar(20, 6, sl.GREEN)) == 2
+    for cells in (6, 12):
+        seen = [filled_halves(sl.bar(p, cells, sl.GREEN)) for p in range(0, 101)]
+        assert seen == sorted(seen)
+        assert set(seen) == set(range(cells * 2 + 1))  # every half step is reachable
+        assert seen[0] == 0 and seen[1] == 1 and seen[100] == cells * 2
 
 
 def test_parse_git_porcelain_v2():
@@ -176,7 +193,7 @@ def test_fable_meter_renders_between_the_weekly_limit_and_the_cost(tmp_path):
     fresh = lambda now: sl.scoped_limits(now, usage_cache(tmp_path, [WEEKLY_ALL, FABLE]))
     bottom = build(FULL, scoped=fresh)[1]
     # half the week gone, 48% used: 2 under pace
-    assert "│ 7d ━━━━━━ 8% ▼ 42 ↻ 3d12h │ fable ━━━━━━ 48% ▼ 2 ↻ 3d12h │ $1.23 │" in bottom
+    assert "│ 7d ╸━━━━━ 8% ▼ 42 ↻ 3d12h │ fable ━━━━━━ 48% ▼ 2 ↻ 3d12h │ $1.23 │" in bottom
 
 
 def test_an_old_reading_says_how_old_it_is(tmp_path):

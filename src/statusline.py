@@ -46,10 +46,12 @@ def level(pct, warn, crit):
 
 
 def bar(pct, cells, color):
-    filled = max(0, min(cells, round(pct / 100 * cells)))
-    if pct > 0 and filled == 0:
-        filled = 1
-    return c(color, "━" * filled) + c(238, "━" * (cells - filled))
+    # half-cell steps: on a 6-cell meter a whole cell is 17%, too coarse to tell 2% from 20%
+    halves = max(0, min(cells * 2, round(pct / 100 * cells * 2)))
+    if pct > 0 and halves == 0:
+        halves = 1
+    full, half = divmod(halves, 2)
+    return c(color, "━" * full + "╸" * half) + c(238, "━" * (cells - full - half))
 
 
 def tokens(n):
