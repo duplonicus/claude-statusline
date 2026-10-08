@@ -39,6 +39,9 @@ def to_html(line):
         if parts[:2] == ["38", "5"]:
             out.append(f'<span style="color:{xterm(int(parts[2]))}">')
             open_span = True
+        elif parts[:2] == ["38", "2"]:
+            out.append(f'<span style="color:rgb({",".join(parts[2:5])})">')
+            open_span = True
     out.append(html.escape(line[pos:]))
     return "".join(out) + ("</span>" if open_span else "")
 

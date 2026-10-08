@@ -35,6 +35,9 @@ def c(code, text):
 
 DIM, GREY, WHITE = 240, 245, 252
 GREEN, YELLOW, RED, BLUE, CYAN, MAGENTA, ORANGE = 114, 221, 203, 75, 80, 176, 215
+TRACK = 238  # the unfilled part of a meter
+EDGE_FLOOR = 0.3
+TRUECOLOR = os.environ.get("COLORTERM") in ("truecolor", "24bit")
 
 
 def width(s):
@@ -45,13 +48,41 @@ def level(pct, warn, crit):
     return RED if pct >= crit else YELLOW if pct >= warn else GREEN
 
 
+def rgb(n):
+    """xterm 256-colour index -> (r, g, b); cube and grey ramp only, nothing here uses the first 16."""
+    if n >= 232:
+        return (8 + (n - 232) * 10,) * 3
+    n -= 16
+    return tuple(0 if x == 0 else 55 + x * 40 for x in (n // 36, n % 36 // 6, n % 6))
+
+
+def nearest(r, g, b):
+    """Closest xterm 256-colour index, for terminals without 24-bit colour."""
+    return min(range(16, 256), key=lambda n: sum((a - x) ** 2 for a, x in zip(rgb(n), (r, g, b))))
+
+
+def edge(color, frac):
+    """The part-filled cell: a full-width line whose colour sits between track and fill.
+
+    A terminal cannot draw part of a thin line without leaving a gap, so the fraction is carried by
+    brightness instead. EDGE_FLOOR keeps even 1% visibly apart from an empty cell.
+    """
+    k = EDGE_FLOOR + (1 - EDGE_FLOOR) * frac
+    r, g, b = (round(t + (f - t) * k) for t, f in zip(rgb(TRACK), rgb(color)))
+    if TRUECOLOR:
+        return f"\x1b[38;2;{r};{g};{b}m━{RESET}"
+    return c(nearest(r, g, b), "━")
+
+
 def bar(pct, cells, color):
-    # half-cell steps: on a 6-cell meter a whole cell is 17%, too coarse to tell 2% from 20%
-    halves = max(0, min(cells * 2, round(pct / 100 * cells * 2)))
-    if pct > 0 and halves == 0:
-        halves = 1
-    full, half = divmod(halves, 2)
-    return c(color, "━" * full + "╸" * half) + c(238, "━" * (cells - full - half))
+    lit = round(max(0.0, min(float(cells), pct / 100 * cells)), 6)
+    full = int(lit)
+    frac = lit - full
+    out = c(color, "━" * full) if full else ""
+    if frac:
+        out += edge(color, frac)
+    rest = cells - full - (1 if frac else 0)
+    return out + (c(TRACK, "━" * rest) if rest else "")
 
 
 def tokens(n):

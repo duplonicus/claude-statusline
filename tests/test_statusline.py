@@ -1,6 +1,7 @@
 """pytest for statusline.py. Run: uvx pytest"""
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -43,7 +44,7 @@ def test_full_render_wide():
     top, bottom = build(FULL)
     assert top == f"Opus 5.5 xhigh │ ~/dev/myproject main +1 ~3 ↑2 │ PR #12 │ statusline design │ id {SID}"
     assert bottom == (
-        "ctx ━━━━╸━━━━━━━ 38% 76k/200k │ 5h ━━╸━━━ 42% ▼ 8 ↻ 2h30m │ 7d ╸━━━━━ 8% ▼ 42 ↻ 3d12h"
+        "ctx ━━━━━━━━━━━━ 38% 76k/200k │ 5h ━━━━━━ 42% ▼ 8 ↻ 2h30m │ 7d ━━━━━━ 8% ▼ 42 ↻ 3d12h"
         " │ $1.23 │ 12m │ +156 -23 │ cache 43m"
     )
 
@@ -73,7 +74,7 @@ def test_empty_and_null_input_does_not_crash():
 
 def test_expired_limit_window_has_no_reset_or_pace():
     d = {"rate_limits": {"five_hour": {"used_percentage": 42, "resets_at": NOW - 5}}}
-    assert build(d)[1].endswith("5h ━━╸━━━ 42%")
+    assert build(d)[1].endswith("5h ━━━━━━ 42%")
 
 
 def test_cold_cache_and_colour_thresholds():
@@ -82,29 +83,79 @@ def test_cold_cache_and_colour_thresholds():
     assert sl.level(49, 50, 80) == sl.GREEN and sl.level(50, 50, 80) == sl.YELLOW and sl.level(80, 50, 80) == sl.RED
 
 
-@pytest.mark.parametrize("pct,halves", [(0, 0), (1, 1), (4, 1), (50, 12), (100, 24), (140, 24)])
-def test_bar_is_always_exactly_n_cells(pct, halves):
-    raw = sl.bar(pct, 12, sl.GREEN)
-    full, half = divmod(halves, 2)
-    assert sl.width(raw) == 12
-    assert raw.count("━") + raw.count("╸") == 12
-    assert raw.startswith(f"\x1b[38;5;{sl.GREEN}m" + "━" * full + "╸" * half + sl.RESET)
+def cells_of(raw):
+    """[(r, g, b), ...] one per cell, read back from the escape codes; also checks every cell is a full line."""
+    out, colour = [], None
+    for code, text in re.findall(r"\x1b\[([0-9;]*)m([^\x1b]*)", raw):
+        p = [int(x) for x in code.split(";") if x]
+        if p[:2] == [38, 5]:
+            colour = sl.rgb(p[2])
+        elif p[:2] == [38, 2]:
+            colour = tuple(p[2:5])
+        assert set(text) <= {"━"}, repr(raw)
+        out += [colour] * len(text)
+    return out
 
 
-def filled_halves(raw):
-    lit = raw.split(sl.RESET)[0]
-    return lit.count("━") * 2 + lit.count("╸")
+def blends(raw, color):
+    """Per cell, how far its colour sits from track (0) to fill (1)."""
+    track, fill = sl.rgb(sl.TRACK), sl.rgb(color)
+    ch = max(range(3), key=lambda i: abs(fill[i] - track[i]))
+    return [(cell[ch] - track[ch]) / (fill[ch] - track[ch]) for cell in cells_of(raw)]
 
 
-def test_bar_resolves_half_cells():
+def lit(raw, color):
+    """How many cells' worth is lit: 1 per fill-coloured cell, and the edge cell's blend undone."""
+    return sum(0 if k == 0 else 1 if k == 1 else (k - sl.EDGE_FLOOR) / (1 - sl.EDGE_FLOOR) for k in blends(raw, color))
+
+
+@pytest.fixture(params=[True, False], ids=["truecolor", "256"])
+def truecolor(request, monkeypatch):
+    monkeypatch.setattr(sl, "TRUECOLOR", request.param)
+    return request.param
+
+
+@pytest.mark.parametrize("pct", [0, 0.1, 1, 2, 8, 20, 42, 50, 99.9, 100, 140])
+def test_bar_is_always_exactly_n_cells_with_no_gap(pct, truecolor):
+    for n in (6, 12):
+        raw = sl.bar(pct, n, sl.GREEN)
+        assert sl.width(raw) == n
+        assert len(cells_of(raw)) == n  # every cell is a full-width line: nothing blank after the fill
+
+
+def test_bar_ends_are_plain(truecolor):
+    track, fill = sl.rgb(sl.TRACK), sl.rgb(sl.RED)
+    assert cells_of(sl.bar(0, 6, sl.RED)) == [track] * 6
+    assert cells_of(sl.bar(50, 6, sl.RED)) == [fill] * 3 + [track] * 3
+    assert cells_of(sl.bar(100, 6, sl.RED)) == cells_of(sl.bar(140, 6, sl.RED)) == [fill] * 6
+
+
+def test_bar_tells_small_percentages_apart(truecolor):
     # 2% and 20% used to light the same single cell of a 6-cell meter
-    assert filled_halves(sl.bar(2, 6, sl.GREEN)) == 1
-    assert filled_halves(sl.bar(20, 6, sl.GREEN)) == 2
-    for cells in (6, 12):
-        seen = [filled_halves(sl.bar(p, cells, sl.GREEN)) for p in range(0, 101)]
-        assert seen == sorted(seen)
-        assert set(seen) == set(range(cells * 2 + 1))  # every half step is reachable
-        assert seen[0] == 0 and seen[1] == 1 and seen[100] == cells * 2
+    two, eight, twenty = (sl.bar(p, 6, sl.GREEN) for p in (2, 8, 20))
+    assert len({two, eight, twenty}) == 3
+    assert cells_of(two)[0] not in (sl.rgb(sl.TRACK), sl.rgb(sl.GREEN))  # lit, but not a whole cell
+    assert cells_of(twenty)[0] == sl.rgb(sl.GREEN)
+
+
+@pytest.mark.parametrize("color", [sl.GREEN, sl.YELLOW, sl.RED])
+def test_bar_shows_the_percentage_it_was_given(color, monkeypatch):
+    monkeypatch.setattr(sl, "TRUECOLOR", True)
+    for n in (6, 12):
+        seen = []
+        for tenth in range(0, 1001):
+            pct = tenth / 10
+            raw = sl.bar(pct, n, color)
+            assert abs(lit(raw, color) - pct / 100 * n) < 0.02, (pct, n)  # within 2% of one cell
+            seen.append(sum(blends(raw, color)))
+        assert seen == sorted(seen)  # more used never draws as less light
+
+
+def test_bar_edge_is_never_mistaken_for_empty(monkeypatch):
+    # without 24-bit colour the blend snaps to the 256 palette; it must still not land on the track colour
+    monkeypatch.setattr(sl, "TRUECOLOR", False)
+    for color in (sl.GREEN, sl.YELLOW, sl.RED):
+        assert cells_of(sl.bar(0.1, 6, color))[0] != sl.rgb(sl.TRACK)
 
 
 def test_parse_git_porcelain_v2():
@@ -193,7 +244,7 @@ def test_fable_meter_renders_between_the_weekly_limit_and_the_cost(tmp_path):
     fresh = lambda now: sl.scoped_limits(now, usage_cache(tmp_path, [WEEKLY_ALL, FABLE]))
     bottom = build(FULL, scoped=fresh)[1]
     # half the week gone, 48% used: 2 under pace
-    assert "│ 7d ╸━━━━━ 8% ▼ 42 ↻ 3d12h │ fable ━━━━━━ 48% ▼ 2 ↻ 3d12h │ $1.23 │" in bottom
+    assert "│ 7d ━━━━━━ 8% ▼ 42 ↻ 3d12h │ fable ━━━━━━ 48% ▼ 2 ↻ 3d12h │ $1.23 │" in bottom
 
 
 def test_an_old_reading_says_how_old_it_is(tmp_path):
