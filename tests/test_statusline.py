@@ -44,7 +44,7 @@ def test_full_render_wide():
     top, bottom = build(FULL)
     assert top == f"Opus 5.5 xhigh │ ~/dev/myproject main +1 ~3 ↑2 │ PR #12 │ statusline design │ id {SID}"
     assert bottom == (
-        "ctx ████▌        38% 76k/200k │ 5h ██▌    42% ▼ 8 ↻ 2h30m │ 7d ▌      8% ▼ 42 ↻ 3d12h"
+        "ctx ██▎    38% 76k/200k │ 5h ██▌    42% ▼ 8 ↻ 2h30m │ 7d ▌      8% ▼ 42 ↻ 3d12h"
         " │ $1.23 │ 12m │ +156 -23 │ cache 43m"
     )
 
@@ -67,9 +67,9 @@ def test_pace_delta_is_used_minus_elapsed():
 
 
 def test_empty_and_null_input_does_not_crash():
-    assert build({}) == ["Claude", "ctx " + " " * 12 + " 0%"]
+    assert build({}) == ["Claude", "ctx " + " " * sl.METER + " 0%"]
     nulls = {"context_window": {"used_percentage": None, "current_usage": None}, "rate_limits": None, "cost": None}
-    assert build(nulls)[1] == "ctx " + " " * 12 + " 0%"
+    assert build(nulls)[1] == "ctx " + " " * sl.METER + " 0%"
 
 
 def test_expired_limit_window_has_no_reset_or_pace():

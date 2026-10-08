@@ -35,6 +35,7 @@ def c(code, text):
 
 DIM, GREY, WHITE = 240, 245, 252
 GREEN, YELLOW, RED, BLUE, CYAN, MAGENTA, ORANGE = 114, 221, 203, 75, 80, 176, 215
+METER = 6  # cells per meter; eighth-cell fill makes that about 2% a step
 TRACK = 237  # background of the unfilled part of a meter
 PARTS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"]  # a cell filled 0-7 eighths from the left
 
@@ -166,7 +167,7 @@ def limit_variants(label, win, length, now):
     num = c(color, f"{round(pct)}%")
     resets = win.get("resets_at")
     if not resets or resets <= now:
-        return [head + bar(pct, 6, color) + " " + num, head + num]
+        return [head + bar(pct, METER, color) + " " + num, head + num]
     left = resets - now
     elapsed = max(0.0, min(100.0, (1 - left / length) * 100))
     delta = round(pct - elapsed)
@@ -175,7 +176,7 @@ def limit_variants(label, win, length, now):
         # over pace = on track to hit the limit before the window resets
         pace = " " + (c(RED if delta >= 10 else YELLOW, f"▲ {delta}") if delta > 0 else c(GREEN, f"▼ {-delta}"))
     reset = " " + c(DIM, "↻ " + span(left))
-    return [head + bar(pct, 6, color) + " " + num + pace + reset, head + num + pace + reset, head + num]
+    return [head + bar(pct, METER, color) + " " + num + pace + reset, head + num + pace + reset, head + num]
 
 
 def scoped_limits(now, path=None):
@@ -273,7 +274,7 @@ def build(d, cols, now=None, git=git_info, scoped=scoped_limits):
     col = level(pct, 50, 80)
     head, num = c(GREY, "ctx") + " ", c(col, f"{round(pct)}%")
     detail = " " + c(DIM, f"{tokens(used)}/{tokens(size)}") if size else ""
-    bottom.append((0, [head + bar(pct, 12, col) + " " + num + detail, head + bar(pct, 12, col) + " " + num, head + num]))
+    bottom.append((0, [head + bar(pct, METER, col) + " " + num + detail, head + bar(pct, METER, col) + " " + num, head + num]))
 
     rl = d.get("rate_limits") or {}
     for prio, key, label in ((1, "five_hour", "5h"), (2, "seven_day", "7d")):
