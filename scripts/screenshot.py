@@ -37,10 +37,10 @@ def to_html(line):
             open_span = False
         parts = m.group(1).split(";")
         if parts[:2] == ["38", "5"]:
-            out.append(f'<span style="color:{xterm(int(parts[2]))}">')
-            open_span = True
-        elif parts[:2] == ["38", "2"]:
-            out.append(f'<span style="color:rgb({",".join(parts[2:5])})">')
+            style = f"color:{xterm(int(parts[2]))}"
+            if parts[3:5] == ["48", "5"]:
+                style += f";background:{xterm(int(parts[5]))}"
+            out.append(f'<span style="{style}">')
             open_span = True
     out.append(html.escape(line[pos:]))
     return "".join(out) + ("</span>" if open_span else "")
