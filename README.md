@@ -62,6 +62,12 @@ It always prints exactly two rows. When a row is too wide, segments shrink and t
 - If a triangle or the reset icon overlaps the text after it, your terminal font is drawing that glyph wider than one cell. The script already puts a space after each for this reason.
 - If the script hits an error it prints the error on the status line. It does not go blank.
 
+## Keeping the 5h and 7d limits current
+
+The rate limits in the status line input come from that session's own last API response. An idle session's numbers freeze, and no session sees what the others spend, so the gauges can sit below what `/usage` shows.
+
+So each run pools its reading in `~/.cache/claude-statusline/limits.json` and also reads the usage screen's cache (below). For each window it shows the highest reading: within one window usage only goes up, so the highest is the newest. A reading for a later window replaces one for an earlier window, and a window that has reset is dropped. With `refreshInterval` set, an idle session catches up within that many seconds of any other session's API call.
+
 ## Per-model weekly limits
 
 The usage screen in Claude Code can show a separate weekly meter for one model. The status line input does not include it: it carries only the 5-hour and 7-day windows.
@@ -86,7 +92,7 @@ A `UserPromptSubmit` hook can read that file by the `session_id` it is given and
 
 ## How it works
 
-*Last checked against the code on 2026-10-09, at commit 33116fd.*
+*Last checked against the code on 2026-10-15, after the shared rate-limit pool was added.*
 
 The whole program is `src/statusline.py`. Claude Code starts it as a new process for each refresh, hands it the session as JSON on stdin, and shows whatever it prints. The script keeps nothing in memory between runs; anything it remembers is in a file.
 
@@ -96,7 +102,8 @@ flowchart LR
     S -->|two rows of text on stdout| CC
     S -->|git status, 2 second timeout| G[git]
     S <-->|last git result, kept 5 seconds| GC[git cache files]
-    U[Claude Code config file] -->|per-model weekly limits| S
+    U[Claude Code config file] -->|usage screen cache| S
+    S <-->|highest 5h and 7d reading| LP[shared limits file]
     S -->|context percent per session| SF[session files]
     SF -->|read by session id| H[a hook]
 ```
@@ -105,9 +112,10 @@ flowchart LR
 
 1. Parse the JSON on stdin. Input that is not valid JSON becomes an empty session.
 2. Save the context percentage to the session file (see "Context usage for hooks"). This is skipped when there is no session id, no reading, or the id has characters other than letters, digits, `_` and `-`.
-3. Read the terminal width from `$COLUMNS` (120 if unset). The width each row may use is that minus 4, and never less than 20.
-4. Build the two rows as lists of segments. A segment is added only when its data is in the input.
-5. Fit each row to the width on its own (next section).
+3. When the input has rate limits, merge them with the shared limits file and the usage screen cache, keep the highest reading per window, and write the result back to the shared file.
+4. Read the terminal width from `$COLUMNS` (120 if unset). The width each row may use is that minus 4, and never less than 20.
+5. Build the two rows as lists of segments. A segment is added only when its data is in the input.
+6. Fit each row to the width on its own (next section).
 6. Print the two rows. If building them raises an error, print `statusline error: ...` instead.
 
 ### How a row is fitted
@@ -147,9 +155,10 @@ Width is counted after stripping the colour and link escape codes.
 |---|---|---|
 | `~/.cache/claude-statusline/<md5 of the directory>.json` | both | The last git result for that directory and when it was taken |
 | `~/.cache/claude-statusline/sessions/<session id>.json` | write | Context percentage and the time it was written |
-| `.claude.json` in `$CLAUDE_CONFIG_DIR`, or in the home directory when that is unset | read | Claude Code's cached usage data, for the per-model weekly limit |
+| `~/.cache/claude-statusline/limits.json` | both | The highest 5h and 7d reading seen across sessions, with each window's reset time |
+| `.claude.json` in `$CLAUDE_CONFIG_DIR`, or in the home directory when that is unset | read | Claude Code's cached usage data, for the per-model weekly limit and the 5h and 7d readings |
 
-Both cache writes go to a `.tmp` file first and are then renamed into place, so a reader never sees a half-written file.
+Every cache write goes to a `.tmp` file first and are then renamed into place, so a reader never sees a half-written file.
 
 Git is asked once per directory per 5 seconds: `git --no-optional-locks status --porcelain=v2 --branch`, with a 2 second timeout. If git times out, the last cached result is used, whatever its age. "Not a git repo" is cached too.
 
@@ -161,6 +170,7 @@ Git is asked once per directory per 5 seconds: `git --no-optional-locks status -
 | No state in memory. Each run is a new process and files carry anything that must last. | Every refresh pays for a Python start and a few small file reads. |
 | Git status is cached for 5 seconds and has a 2 second timeout. | The branch and counts can be up to 5 seconds behind, or older after a timeout. |
 | The per-model weekly limit comes from a file Claude Code writes for its own use, not from the status line input. | It is not a documented interface and the number can be old. Any unexpected shape shows no meter; a reading over an hour old shows its age. |
+| The 5h and 7d gauges show the highest reading any session or the usage screen has seen for the current window. | Nothing is accurate between API calls anywhere: the number is as new as the latest call from any session, or the last `/usage`. |
 | The per-model meter is shown only when the input also carries rate-limit data. | No meter in a session that has no rate-limit data, even if the cached file has a reading. |
 | `build` takes the git lookup and the per-model lookup as arguments. | Nothing at run time. It lets the tests and `scripts/demo.py` pass in fixed values. |
 | An error is printed on the status line. | A bug is visible in every session until it is fixed. |
@@ -177,7 +187,7 @@ Git is asked once per directory per 5 seconds: `git --no-optional-locks status -
 uvx pytest
 ```
 
-29 tests. One pins the exact text of a full-width render. The rest cover narrow widths, the pace arithmetic, the meter fill, git output parsing, empty and null input, the session files, and the per-model limit cache, plus one run of the script end to end as a subprocess.
+32 tests. One pins the exact text of a full-width render. The rest cover narrow widths, the pace arithmetic, the meter fill, git output parsing, empty and null input, the session files, the shared rate-limit pool, and the per-model limit cache, plus one run of the script end to end as a subprocess.
 
 ## License
 

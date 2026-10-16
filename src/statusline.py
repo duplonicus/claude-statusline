@@ -25,6 +25,8 @@ SESSION_DIR = os.path.join(CACHE_DIR, "sessions")
 WINDOWS = {"five_hour": 5 * 3600, "seven_day": 7 * 86400}
 USAGE_CACHE = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~"), ".claude.json")
 USAGE_OLD = 3600  # past this, a cached reading is shown with its age
+SHARED_LIMITS = os.path.join(CACHE_DIR, "limits.json")
+SAME_WINDOW = 600  # seconds; two readings whose resets_at are this close describe the same window
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;;.*?\x07")
 
@@ -313,6 +315,58 @@ def build(d, cols, now=None, git=git_info, scoped=scoped_limits):
     return [fit(top, limit), fit(bottom, limit)]
 
 
+def freshest_limits(rl, now=None, shared=None, usage=None):
+    """Newest known 5h and 7d readings, across every session and the usage screen.
+
+    The input's rate_limits come from this session's own last API response, so they freeze
+    while the session is idle and never see what other sessions spend. Each run pools its
+    reading in a shared file and also reads the usage screen's cache; within one window usage
+    only goes up, so the highest reading for the same window is the newest. A later window wins.
+    """
+    now = now or time.time()
+    shared = shared or SHARED_LIMITS
+    pool = {}
+    try:
+        with open(shared) as f:
+            pool = {k: v for k, v in json.load(f).items() if k in WINDOWS}
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        with open(usage or USAGE_CACHE) as f:
+            util = json.load(f)["cachedUsageUtilization"]["utilization"]
+        seen = [{k: {"used_percentage": float(util[k]["utilization"]),
+                     "resets_at": datetime.datetime.fromisoformat(util[k]["resets_at"]).timestamp()}}
+                for k in WINDOWS if (util.get(k) or {}).get("utilization") is not None]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        seen = []
+    seen.append({k: v for k, v in (rl or {}).items() if k in WINDOWS})
+    out = dict(rl or {})
+    for key in WINDOWS:
+        best = None
+        for win in [pool.get(key)] + [s.get(key) for s in seen]:
+            try:
+                pct, resets = float(win["used_percentage"]), float(win["resets_at"])
+            except (TypeError, KeyError, ValueError):
+                continue
+            if resets <= now:
+                continue
+            if best is None or resets > best["resets_at"] + SAME_WINDOW or (
+                abs(resets - best["resets_at"]) <= SAME_WINDOW and pct > best["used_percentage"]
+            ):
+                best = {"used_percentage": pct, "resets_at": resets}
+        if best:
+            out[key] = best
+    try:
+        os.makedirs(os.path.dirname(shared), exist_ok=True)
+        tmp = f"{shared}.{os.getpid()}.tmp"  # several sessions write this file
+        with open(tmp, "w") as f:
+            json.dump({k: out[k] for k in WINDOWS if k in out}, f)
+        os.replace(tmp, shared)
+    except OSError:
+        pass
+    return out
+
+
 def record_context(d, now=None, folder=None):
     """Save how full the context window is, per session, where a hook can read it.
 
@@ -341,6 +395,8 @@ def main():
         data = {}
     if isinstance(data, dict):
         record_context(data)
+        if data.get("rate_limits"):
+            data["rate_limits"] = freshest_limits(data["rate_limits"])
     try:
         cols = int(os.environ.get("COLUMNS") or 120)
     except ValueError:

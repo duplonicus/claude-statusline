@@ -216,3 +216,39 @@ def test_fable_meter_needs_rate_limit_data_and_never_breaks_the_two_rows(tmp_pat
         lines = build(FULL, cols, scoped=fresh)
         assert len(lines) == 2 and all(len(l) <= max(20, cols - 4) for l in lines), (cols, lines)
         assert "ctx" in lines[1] and "38%" in lines[1]
+
+
+def test_limits_take_the_highest_reading_of_the_same_window(tmp_path):
+    shared = tmp_path / "limits.json"
+    shared.write_text(json.dumps({"five_hour": {"used_percentage": 60, "resets_at": NOW + 9030}}))
+    usage = usage_cache(tmp_path, [])
+    stale = {"five_hour": {"used_percentage": 42, "resets_at": NOW + 9000}, "seven_day": {"used_percentage": 8, "resets_at": NOW + 302400}}
+    out = sl.freshest_limits(stale, NOW, str(shared), usage)
+    assert out["five_hour"]["used_percentage"] == 60  # another session saw more
+    assert out["seven_day"]["used_percentage"] == 8
+    assert json.loads(shared.read_text())["seven_day"]["used_percentage"] == 8  # pooled for the others
+
+
+def test_limits_a_newer_window_beats_a_higher_old_one_and_reset_ones_drop(tmp_path):
+    shared = tmp_path / "limits.json"
+    shared.write_text(json.dumps({
+        "five_hour": {"used_percentage": 90, "resets_at": NOW + 100},
+        "seven_day": {"used_percentage": 70, "resets_at": NOW - 5},
+    }))
+    live = {"five_hour": {"used_percentage": 3, "resets_at": NOW + 17000}, "seven_day": {"used_percentage": 1, "resets_at": NOW + 600000}}
+    out = sl.freshest_limits(live, NOW, str(shared), str(tmp_path / "missing.json"))
+    assert out["five_hour"]["used_percentage"] == 3
+    assert out["seven_day"]["used_percentage"] == 1
+
+
+def test_limits_read_the_usage_screen_cache_and_survive_junk(tmp_path):
+    usage = tmp_path / "claude.json"
+    usage.write_text(json.dumps({"cachedUsageUtilization": {"fetchedAtMs": NOW * 1000, "utilization": {
+        "five_hour": {"utilization": 55, "resets_at": iso(NOW + 9000)}, "seven_day": None}}}))
+    shared = tmp_path / "limits.json"
+    shared.write_text("not json")
+    live = {"five_hour": {"used_percentage": 42, "resets_at": NOW + 9000}, "spend_limit": {"used_percentage": 5}}
+    out = sl.freshest_limits(live, NOW, str(shared), str(usage))
+    assert out["five_hour"]["used_percentage"] == 55
+    assert out["spend_limit"] == {"used_percentage": 5}
+    assert "seven_day" not in out
