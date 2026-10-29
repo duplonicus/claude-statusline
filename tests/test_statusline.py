@@ -160,6 +160,14 @@ def test_row_widths_are_saved_without_colour_codes(tmp_path):
     assert json.loads((tmp_path / f"{SID}.json").read_text()) == {"rows": [8, 3], "cols": 80, "t": NOW}
 
 
+def test_readme_session_file_example_has_the_keys_the_script_writes(tmp_path):
+    readme = open(os.path.join(SRC, "..", "README.md")).read()
+    section = readme.split("## Context usage for hooks", 1)[1]
+    example = json.loads(re.search(r"```json\n(.*?)\n```", section, re.S).group(1))
+    sl.record_context(FULL, now=NOW, folder=str(tmp_path), rows=["a", "b"], cols=80)
+    assert example.keys() == json.loads((tmp_path / f"{SID}.json").read_text()).keys()
+
+
 def test_context_usage_is_not_saved_without_a_reading_or_with_an_unsafe_id(tmp_path):
     sl.record_context({"session_id": SID}, folder=str(tmp_path))
     sl.record_context({"session_id": "../escape", "context_window": {"used_percentage": 5}}, folder=str(tmp_path))

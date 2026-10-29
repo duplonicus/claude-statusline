@@ -82,17 +82,19 @@ Things to know:
 
 ## Context usage for hooks
 
-Claude Code hooks are not told how full the context window is. The status line is. So on every refresh this script also writes the figure to `~/.cache/claude-statusline/sessions/<session id>.json`:
+Claude Code hooks are not told how full the context window is. The status line is. So on every refresh this script also writes the figure to `~/.cache/claude-statusline/sessions/<session id>.json`, with the width of each printed row (colour codes stripped) and the `$COLUMNS` they were fitted to:
 
 ```json
-{"pct": 38, "t": 1791392326.4}
+{"pct": 38, "rows": [54, 48], "cols": 120, "t": 1791392326.4}
 ```
+
+`pct` is left out when the input has no context reading yet, so a reader should treat a missing `pct` as no reading.
 
 A `UserPromptSubmit` hook can read that file by the `session_id` it is given and act on it, for example telling the session to write its handoff notes at 60% instead of losing detail to auto-compact.
 
 ## How it works
 
-*Last checked against the code on 2026-10-15, after the shared rate-limit pool was added.*
+*Last checked against the code on 2026-10-29, after the row widths were added to the session file.*
 
 The whole program is `src/statusline.py`. Claude Code starts it as a new process for each refresh, hands it the session as JSON on stdin, and shows whatever it prints. The script keeps nothing in memory between runs; anything it remembers is in a file.
 
@@ -104,19 +106,19 @@ flowchart LR
     S <-->|last git result, kept 5 seconds| GC[git cache files]
     U[Claude Code config file] -->|usage screen cache| S
     S <-->|highest 5h and 7d reading| LP[shared limits file]
-    S -->|context percent per session| SF[session files]
+    S -->|context percent and row widths per session| SF[session files]
     SF -->|read by session id| H[a hook]
 ```
 
 ### One run, step by step
 
 1. Parse the JSON on stdin. Input that is not valid JSON becomes an empty session.
-2. Save the context percentage to the session file (see "Context usage for hooks"). This is skipped when there is no session id, no reading, or the id has characters other than letters, digits, `_` and `-`.
-3. When the input has rate limits, merge them with the shared limits file and the usage screen cache, keep the highest reading per window, and write the result back to the shared file.
-4. Read the terminal width from `$COLUMNS` (120 if unset). The width each row may use is that minus 4, and never less than 20.
-5. Build the two rows as lists of segments. A segment is added only when its data is in the input.
-6. Fit each row to the width on its own (next section).
-6. Print the two rows. If building them raises an error, print `statusline error: ...` instead.
+2. When the input has rate limits, merge them with the shared limits file and the usage screen cache, keep the highest reading per window, and write the result back to the shared file.
+3. Read the terminal width from `$COLUMNS` (120 if unset). The width each row may use is that minus 4, and never less than 20.
+4. Build the two rows as lists of segments. A segment is added only when its data is in the input.
+5. Fit each row to the width on its own (next section).
+6. Save the context percentage, each row's width and `$COLUMNS` to the session file (see "Context usage for hooks"). This is skipped when there is no session id, or the id has characters other than letters, digits, `_` and `-`.
+7. Print the two rows. If building them raises an error, print `statusline error: ...` instead.
 
 ### How a row is fitted
 
@@ -154,7 +156,7 @@ Width is counted after stripping the colour and link escape codes.
 | File | Read or write | What it holds |
 |---|---|---|
 | `~/.cache/claude-statusline/<md5 of the directory>.json` | both | The last git result for that directory and when it was taken |
-| `~/.cache/claude-statusline/sessions/<session id>.json` | write | Context percentage and the time it was written |
+| `~/.cache/claude-statusline/sessions/<session id>.json` | write | Context percentage (when there is a reading), each printed row's width, `$COLUMNS`, and the time it was written |
 | `~/.cache/claude-statusline/limits.json` | both | The highest 5h and 7d reading seen across sessions, with each window's reset time |
 | `.claude.json` in `$CLAUDE_CONFIG_DIR`, or in the home directory when that is unset | read | Claude Code's cached usage data, for the per-model weekly limit and the 5h and 7d readings |
 
@@ -187,7 +189,7 @@ Git is asked once per directory per 5 seconds: `git --no-optional-locks status -
 uvx pytest
 ```
 
-32 tests. One pins the exact text of a full-width render. The rest cover narrow widths, the pace arithmetic, the meter fill, git output parsing, empty and null input, the session files, the shared rate-limit pool, and the per-model limit cache, plus one run of the script end to end as a subprocess.
+34 tests. One pins the exact text of a full-width render. The rest cover narrow widths, the pace arithmetic, the meter fill, git output parsing, empty and null input, the session files, the shared rate-limit pool, and the per-model limit cache, plus one run of the script end to end as a subprocess.
 
 ## License
 
