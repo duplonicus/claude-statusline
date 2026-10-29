@@ -142,10 +142,10 @@ def test_cli_end_to_end(tmp_path):
     lines = out.stdout.splitlines()
     assert out.returncode == 0 and len(lines) == 2
     assert all(sl.width(l) <= 56 for l in lines)
+    saved = json.loads((tmp_path / ".cache" / "claude-statusline" / "sessions" / f"{SID}.json").read_text())
+    assert saved["pct"] == 38 and saved.get("rows") == [sl.width(l) for l in lines] and saved.get("cols") == 60
     out = subprocess.run([sys.executable, script], input="not json", capture_output=True, text=True, env=env)
     assert out.returncode == 0 and "Claude" in out.stdout
-    saved = tmp_path / ".cache" / "claude-statusline" / "sessions" / f"{SID}.json"
-    assert json.loads(saved.read_text())["pct"] == 38
 
 
 def test_context_usage_is_saved_per_session_for_hooks(tmp_path):
