@@ -161,9 +161,9 @@ def test_row_widths_are_saved_without_colour_codes(tmp_path):
 
 
 def test_readme_session_file_example_has_the_keys_the_script_writes(tmp_path):
-    readme = open(os.path.join(SRC, "..", "README.md")).read()
+    readme = open(os.path.join(SRC, "..", "README.md"), encoding="utf-8").read()
     section = readme.split("## Context usage for hooks", 1)[1]
-    example = json.loads(re.search(r"```json\n(.*?)\n```", section, re.S).group(1))
+    example = json.loads(re.search(r"```json\r?\n(.*?)\r?\n```", section, re.S).group(1))
     sl.record_context(FULL, now=NOW, folder=str(tmp_path), rows=["a", "b"], cols=80)
     assert example.keys() == json.loads((tmp_path / f"{SID}.json").read_text()).keys()
 
