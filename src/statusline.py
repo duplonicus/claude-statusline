@@ -16,6 +16,7 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
 
 RESET = "\x1b[0m"
 SEP = " \x1b[38;5;238m│\x1b[0m "
@@ -42,8 +43,39 @@ TRACK = 237  # background of the unfilled part of a meter
 PARTS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"]  # a cell filled 0-7 eighths from the left
 
 
+def cells(s):
+    """Terminal cells s takes, as Claude Code's footer counts them (Bun.stringWidth):
+    East Asian wide characters and emoji 2, marks and joiners 0, the rest 1."""
+    n, prev = 0, ""
+    for ch in s:
+        o = ord(ch)
+        if ch == "\ufe0f":  # emoji presentation: a symbol before it takes 2
+            if prev and unicodedata.east_asian_width(prev) not in "WF" and unicodedata.category(prev) == "So":
+                n += 1
+        elif ch == "\u20e3":  # a keycap (1️⃣) is 2 wide
+            n += 1
+        elif prev and (0x1F3FB <= o <= 0x1F3FF or prev == "\u200d" and unicodedata.east_asian_width(ch) in "WF"):
+            pass  # a skin tone, or an emoji joined to the one before it
+        elif unicodedata.category(ch) not in ("Mn", "Me", "Cf"):
+            n += 2 if unicodedata.east_asian_width(ch) in "WF" else 1
+        prev = ch
+    return n
+
+
+def cut(s, limit):
+    """s, or its head and "…" in at most limit cells."""
+    if cells(s) <= limit:
+        return s
+    head = ""
+    for ch in s:
+        if cells(head + ch) > limit - 1:
+            break
+        head += ch
+    return head + "…"
+
+
 def width(s):
-    return len(ANSI_RE.sub("", s))
+    return cells(ANSI_RE.sub("", s))
 
 
 def level(pct, warn, crit):
@@ -83,7 +115,7 @@ def short_path(path, limit=32):
     home = os.path.expanduser("~")
     if path == home or path.startswith(home + "/"):
         path = "~" + path[len(home):]
-    if len(path) <= limit:
+    if cells(path) <= limit:
         return path
     parts = path.split("/")
     return "/".join([parts[0], "…"] + parts[-2:]) if len(parts) > 3 else path
@@ -262,8 +294,7 @@ def build(d, cols, now=None, git=git_info, scoped=scoped_limits):
 
     name = d.get("session_name")
     if name:
-        cut = lambda n: name if len(name) <= n else name[: n - 1] + "…"
-        top.append((3, [c(GREY, cut(40)), c(GREY, cut(20)), ""]))
+        top.append((3, [c(GREY, cut(name, 40)), c(GREY, cut(name, 20)), ""]))
 
     sid = d.get("session_id")
     if sid:

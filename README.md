@@ -142,7 +142,7 @@ Each segment has a priority number and a list of variants, widest first. While t
 | Bottom | Lines added and removed | 7 | shown → dropped |
 | Bottom | Prompt cache | 8 | shown → dropped |
 
-Width is counted after stripping the colour and link escape codes.
+Width is counted in terminal cells after stripping the colour and link escape codes, the way Claude Code's footer counts them: CJK characters and emoji take 2 cells, combining marks and joiners none.
 
 ### Meters and colours
 
@@ -189,7 +189,7 @@ Git is asked once per directory per 5 seconds: `git --no-optional-locks status -
 uvx pytest
 ```
 
-34 tests. One pins the exact text of a full-width render. The rest cover narrow widths, the pace arithmetic, the meter fill, git output parsing, empty and null input, the session files, the shared rate-limit pool, and the per-model limit cache, plus one run of the script end to end as a subprocess.
+40 tests. One pins the exact text of a full-width render. The rest cover narrow widths, the pace arithmetic, the meter fill, wide characters, git output parsing, empty and null input, the session files, the shared rate-limit pool, and the per-model limit cache, plus one run of the script end to end as a subprocess, and four for the pre-commit secret scan (renamed files, paths with spaces or non-ASCII characters).
 
 ## License
 

@@ -49,6 +49,27 @@ def test_full_render_wide():
     )
 
 
+# Bun.stringWidth's answers (Claude Code's footer measures with it), read from
+# bun 2026-10-29: CJK, emoji, skin tone, ZWJ family, keycap, flag, marks.
+BUN_WIDTHS = {
+    "⏵⏵ bypass permissions on · ": 27, "修正 🔧": 7, "e\u0301": 1, "⚠️": 2, "⚠": 1, "👍🏽": 2,
+    "a\u200db": 2, "👨\u200d👩\u200d👧": 2, "❤️": 2, "ｱｲ": 2, "한국어": 6, "ＡＢ": 4, "©️": 2,
+    "🇨🇦": 2, "…▏─": 3, "x\ufe0fy": 2, "1️⃣": 2, "日本 branch/修正": 16,
+}
+
+
+def test_cells_count_wide_characters_as_the_footer_does():
+    assert {s: sl.cells(s) for s in BUN_WIDTHS} == BUN_WIDTHS
+
+
+def test_wide_session_name_is_cut_by_cells_and_rows_still_fit():
+    name = "修正 🔧 ブランチの整理と確認作業をする"
+    assert sl.cells(sl.cut(name, 20)) <= 20 and sl.cut(name, 20).endswith("…")
+    for cols in (200, 120, 90, 70, 50):
+        lines = sl.build({**FULL, "session_name": name}, cols, now=NOW, git=lambda cwd: GIT, scoped=lambda now: [])
+        assert all(sl.width(l) <= max(20, cols - 4) for l in lines), (cols, plain(lines))
+
+
 def test_always_two_rows_and_session_id_survives_narrow():
     for cols in (200, 120, 90, 70, 50):
         lines = build(FULL, cols)
