@@ -154,6 +154,12 @@ def test_context_usage_is_saved_per_session_for_hooks(tmp_path):
     assert [p.name for p in tmp_path.iterdir()] == [f"{SID}.json"]  # no temp file left behind
 
 
+def test_row_widths_are_saved_without_colour_codes(tmp_path):
+    rows = [sl.c(sl.WHITE, "Opus") + sl.SEP + "x", "ctx"]
+    sl.record_context({"session_id": SID}, now=NOW, folder=str(tmp_path), rows=rows, cols=80)
+    assert json.loads((tmp_path / f"{SID}.json").read_text()) == {"rows": [8, 3], "cols": 80, "t": NOW}
+
+
 def test_context_usage_is_not_saved_without_a_reading_or_with_an_unsafe_id(tmp_path):
     sl.record_context({"session_id": SID}, folder=str(tmp_path))
     sl.record_context({"session_id": "../escape", "context_window": {"used_percentage": 5}}, folder=str(tmp_path))

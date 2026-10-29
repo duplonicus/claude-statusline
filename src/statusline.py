@@ -367,22 +367,27 @@ def freshest_limits(rl, now=None, shared=None, usage=None):
     return out
 
 
-def record_context(d, now=None, folder=None):
+def record_context(d, now=None, folder=None, rows=None, cols=None):
     """Save how full the context window is, per session, where a hook can read it.
 
     Hooks are not told the context usage; the status line is. Writing it here lets a
     UserPromptSubmit hook warn the session before auto-compact (see README).
+    The printed rows' widths go in too, with the $COLUMNS they were fitted to, so a
+    mod can tell how much of the footer the status line takes.
     """
     sid = d.get("session_id")
     pct = (d.get("context_window") or {}).get("used_percentage")
-    if not sid or pct is None or not re.fullmatch(r"[A-Za-z0-9_-]+", sid):
+    if not sid or (pct is None and rows is None) or not re.fullmatch(r"[A-Za-z0-9_-]+", sid):
         return
+    entry = {} if pct is None else {"pct": pct}
+    if rows is not None:
+        entry.update(rows=[width(r) for r in rows], cols=cols)
     folder = folder or SESSION_DIR
     try:
         os.makedirs(folder, exist_ok=True)
         path = os.path.join(folder, sid + ".json")
         with open(path + ".tmp", "w") as f:
-            json.dump({"pct": pct, "t": now or time.time()}, f)
+            json.dump({**entry, "t": now or time.time()}, f)
         os.replace(path + ".tmp", path)
     except OSError:
         pass
@@ -393,18 +398,19 @@ def main():
         data = json.load(sys.stdin)
     except ValueError:
         data = {}
-    if isinstance(data, dict):
-        record_context(data)
-        if data.get("rate_limits"):
-            data["rate_limits"] = freshest_limits(data["rate_limits"])
+    if isinstance(data, dict) and data.get("rate_limits"):
+        data["rate_limits"] = freshest_limits(data["rate_limits"])
     try:
         cols = int(os.environ.get("COLUMNS") or 120)
     except ValueError:
         cols = 120
     try:
-        print("\n".join(build(data, cols)))
+        rows = build(data, cols)
     except Exception as e:  # a broken status line should say so, not go blank
-        print(f"statusline error: {type(e).__name__}: {e}")
+        rows = [f"statusline error: {type(e).__name__}: {e}"]
+    if isinstance(data, dict):
+        record_context(data, rows=rows, cols=cols)
+    print("\n".join(rows))
 
 
 if __name__ == "__main__":
