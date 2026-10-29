@@ -3,8 +3,12 @@
 # To enable once: git config core.hooksPath .githooks
 set -euo pipefail
 
-staged=$(git diff --cached --name-only --diff-filter=ACM)
-if [ -z "$staged" ]; then
+# Scan the staged diff itself, not a file list rebuilt from it: a rebuilt list
+# loses renamed files, paths git quotes (non-ASCII) and paths with spaces. A
+# failing git diff stops the commit (set -e) instead of passing it.
+staged_diff=$(git diff --cached -U0 --no-color --no-ext-diff)
+diff_added=$(printf '%s\n' "$staged_diff" | grep -E "^\+" || true)
+if [ -z "$diff_added" ]; then
   exit 0
 fi
 
@@ -21,7 +25,6 @@ patterns=(
 )
 
 status=0
-diff_added=$(git diff --cached | grep -E "^\+" || true)
 for p in "${patterns[@]}"; do
   if printf '%s\n' "$diff_added" | grep -Eq -- "$p"; then
     echo "pre-commit: suspected secret pattern detected ($p)." >&2
