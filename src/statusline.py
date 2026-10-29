@@ -49,8 +49,10 @@ def cells(s):
     n, prev = 0, ""
     for ch in s:
         o = ord(ch)
-        if ch == "\ufe0f":  # emoji presentation: a symbol before it takes 2
-            if prev and unicodedata.east_asian_width(prev) not in "WF" and unicodedata.category(prev) == "So":
+        if ch == "\ufe0f":  # emoji presentation (↩️ ℹ️ ‼️): the emoji before it takes 2
+            # Bun widens only characters with the Unicode Emoji property, which the
+            # stdlib lacks; any non-ASCII one is close enough (VS16 follows emoji).
+            if prev and not prev.isascii() and unicodedata.east_asian_width(prev) not in "WF":
                 n += 1
         elif ch == "\u20e3":  # a keycap (1️⃣) is 2 wide
             n += 1
