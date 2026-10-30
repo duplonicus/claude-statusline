@@ -47,3 +47,10 @@ def test_a_secret_in_a_path_git_quotes_or_the_shell_splits_is_caught(repo, name)
     (repo / name).write_text(f"{TOKEN}\n")
     git(repo, "add", name)
     assert hook(repo) == 1
+
+
+def test_a_secret_before_a_large_diff_is_caught(repo):
+    # grep -q exits at the match while printf is still writing; under pipefail that read as no match.
+    (repo / "big.txt").write_text(f"{TOKEN}\n" + "padding line\n" * 200000)
+    git(repo, "add", "big.txt")
+    assert hook(repo) == 1
