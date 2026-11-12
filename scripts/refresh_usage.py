@@ -68,7 +68,8 @@ def read_answer(stdout):
             continue
         if reply.get("subtype") != "success":
             return False, str(reply.get("error") or "Claude Code refused the request")
-        if not (reply.get("response") or {}).get("rate_limits_available"):
+        body = reply.get("response")
+        if not (isinstance(body, dict) and body.get("rate_limits_available")):
             return False, "Claude Code answered without plan limits (not signed in with a subscription?)"
         return True, None
     return False, "no reply to get_usage in Claude Code's output"
@@ -96,7 +97,8 @@ def describe(path=None):
             util = json.load(f)["cachedUsageUtilization"]["utilization"]
         parts = [f"{(lim['scope']['model']['display_name']).lower()} {lim['percent']:g}%"
                  for lim in util.get("limits") or []
-                 if lim.get("kind") == "weekly_scoped" and ((lim.get("scope") or {}).get("model") or {}).get("display_name")]
+                 if lim.get("kind") == "weekly_scoped" and lim.get("percent") is not None
+                 and ((lim.get("scope") or {}).get("model") or {}).get("display_name")]
         parts += [f"{label} {util[key]['utilization']:g}%" for key, label in (("five_hour", "5h"), ("seven_day", "7d"))
                   if (util.get(key) or {}).get("utilization") is not None]
         return ", ".join(parts) or "no limits in the reading"
@@ -123,7 +125,7 @@ def run(now=None, force=False, claude=None, sessions=None, cache=None, timeout=T
         return 0, f"refreshed: {describe(cache)}"
     if ok:
         error = "Claude Code answered but did not renew its cached reading"
-    stale = age is None or age >= sl.USAGE_OLD
+    stale = age is None or age < 0 or age >= sl.USAGE_OLD  # a reading dated in the future can't be trusted as fresh
     return (1 if stale else 0), f"failed: {error}" + ("" if stale else "; reading still under an hour old, next run retries")
 
 

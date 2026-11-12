@@ -196,6 +196,27 @@ def test_read_answer_takes_only_the_reply_to_its_own_request():
     assert ru.read_answer(other + "\n" + mine) == (True, None)
 
 
+@pytest.mark.parametrize("body", [["rate_limits_available"], "rate_limits_available", 1])
+def test_read_answer_survives_a_reply_body_of_the_wrong_type(body):
+    line = json.dumps({"type": "control_response", "response": {"request_id": ru.REQUEST_ID, "subtype": "success", "response": body}})
+    assert ru.read_answer(line) == (False, "Claude Code answered without plan limits (not signed in with a subscription?)")
+
+
+def test_describe_leaves_out_a_limit_with_no_percent(tmp_path):
+    path = tmp_path / ".claude.json"
+    path.write_text(json.dumps({"cachedUsageUtilization": {"utilization": {
+        "five_hour": {"utilization": 55}, "seven_day": {"utilization": None},
+        "limits": [{"kind": "weekly_scoped", "percent": None, "scope": {"model": {"display_name": "Fable"}}},
+                   {"kind": "weekly_scoped", "percent": 3, "scope": {"model": {"display_name": "Opus"}}}]}}}))
+    assert ru.describe(str(path)) == "opus 3%, 5h 55%"
+
+
+def test_a_failed_try_on_a_reading_dated_in_the_future_is_an_error(world):
+    world.session(age=0)
+    world.reading(age=-500)
+    assert world.tick("error") == (1, "failed: get_usage is not supported in this context")
+
+
 def test_the_script_run_as_a_program_uses_the_paths_the_status_line_uses(world):
     """End to end as the timer runs it, with HOME pointed at a throwaway folder."""
     home = world.tmp

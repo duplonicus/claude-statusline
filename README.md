@@ -218,7 +218,7 @@ Git is asked once per directory per 5 seconds: `git --no-optional-locks status -
 uvx pytest
 ```
 
-66 tests. One pins the exact text of a full-width render. The rest cover narrow widths, the pace arithmetic, the meter fill, wide characters, git output parsing, empty and null input, the session files, the shared rate-limit pool, and the per-model limit cache, plus one run of the script end to end as a subprocess, and five for the pre-commit secret scan (renamed files, paths with spaces or non-ASCII characters). 25 are for `scripts/refresh_usage.py`, run against a stand-in for Claude Code: when it asks and when it skips, each way a run can fail, and that the status line shows what a refresh wrote.
+71 tests. One pins the exact text of a full-width render. The rest cover narrow widths, the pace arithmetic, the meter fill, wide characters, git output parsing, empty and null input, the session files, the shared rate-limit pool, and the per-model limit cache, plus one run of the script end to end as a subprocess, and five for the pre-commit secret scan (renamed files, paths with spaces or non-ASCII characters). 30 are for `scripts/refresh_usage.py`, run against a stand-in for Claude Code: when it asks and when it skips, each way a run can fail, and that the status line shows what a refresh wrote.
 
 ## License
 
