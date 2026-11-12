@@ -76,9 +76,38 @@ Claude Code keeps the last answer it fetched for that screen in its config file 
 
 Things to know:
 
-- The number is only as fresh as that cache. Opening `/usage` in any session refreshes it. Past an hour old, the meter says so: `fable ██▉    48% ▼ 2 ↻ 3d12h (3h00m old)`.
+- The number is only as fresh as that cache. Opening `/usage` in any session refreshes it, and so does the timer below. Past an hour old, the meter says so: `fable ██▉    48% ▼ 2 ↻ 3d12h (3h00m old)`.
 - A reading whose week has already reset is not shown.
 - That file is not a documented interface. If its shape changes, the meter disappears and nothing else breaks.
+
+### Keeping it fresh without opening `/usage`
+
+`scripts/refresh_usage.py` asks a headless Claude Code for the same reading the usage screen fetches, through its `get_usage` control request. There is no prompt and no model call, and Claude Code signs the request itself, so the script never touches your login. Claude Code then renews the cache, and the status line picks the new number up on its next run.
+
+```
+$ python3 scripts/refresh_usage.py
+refreshed: fable 14%, 5h 55%, 7d 56%
+```
+
+One run takes about 2 seconds. It starts Claude Code with `--safe-mode`, so none of your hooks, MCP servers or `CLAUDE.md` files load, and with `--no-session-persistence`, so it leaves no transcript.
+
+It does nothing when no status line was drawn in the last 5 minutes (no session is open to show the meter to), or when the reading is under 5 minutes old. `--force` skips both checks.
+
+To run it every 10 minutes as a systemd user timer:
+
+```bash
+cp systemd/claude-statusline-usage.service systemd/claude-statusline-usage.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now claude-statusline-usage.timer
+```
+
+The service file expects this repo at `~/dev/claude-statusline`; change its `ExecStart` line if yours is elsewhere. `journalctl --user -u claude-statusline-usage` shows what each run did.
+
+Things to know:
+
+- `get_usage` is marked experimental in Claude Code and is not in its documentation. This was written against Claude Code 2.1.322. If the request goes away, the runs fail and the meter goes back to showing its age.
+- A failed run exits 0 while the reading is under an hour old, since the next run tries again. It exits 1 once the reading is an hour old or missing, so the unit shows as failed only when the meter is visibly stale.
+- With a session left open, the timer asks around the clock: up to 144 requests a day. Claude Code itself re-asks after 60 seconds; how often the endpoint tolerates being asked is not documented.
 
 ## Context usage for hooks
 
@@ -181,7 +210,7 @@ Git is asked once per directory per 5 seconds: `git --no-optional-locks status -
 
 - If a row is still too wide when every segment is at its narrowest, it is printed as it is.
 - The script never deletes its cache files. There is one small file per directory visited and one per session.
-- The per-model meter depends on Claude Code refreshing its own cached usage data.
+- The per-model meter depends on Claude Code refreshing its own cached usage data. The status line never asks for it; only `/usage` or `scripts/refresh_usage.py` does.
 
 ## Tests
 
@@ -189,7 +218,7 @@ Git is asked once per directory per 5 seconds: `git --no-optional-locks status -
 uvx pytest
 ```
 
-40 tests. One pins the exact text of a full-width render. The rest cover narrow widths, the pace arithmetic, the meter fill, wide characters, git output parsing, empty and null input, the session files, the shared rate-limit pool, and the per-model limit cache, plus one run of the script end to end as a subprocess, and four for the pre-commit secret scan (renamed files, paths with spaces or non-ASCII characters).
+66 tests. One pins the exact text of a full-width render. The rest cover narrow widths, the pace arithmetic, the meter fill, wide characters, git output parsing, empty and null input, the session files, the shared rate-limit pool, and the per-model limit cache, plus one run of the script end to end as a subprocess, and five for the pre-commit secret scan (renamed files, paths with spaces or non-ASCII characters). 25 are for `scripts/refresh_usage.py`, run against a stand-in for Claude Code: when it asks and when it skips, each way a run can fail, and that the status line shows what a refresh wrote.
 
 ## License
 

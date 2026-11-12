@@ -1,0 +1,9 @@
+[Unit]
+Description=Every 10 minutes: refresh Claude Code's usage reading while a session is open (claude-statusline)
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+
+[Install]
+WantedBy=timers.target

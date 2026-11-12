@@ -1,0 +1,7 @@
+[Unit]
+Description=Refresh Claude Code's usage reading for the status line's per-model meter (claude-statusline)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/dev/claude-statusline/scripts/refresh_usage.py
+TimeoutStartSec=90
