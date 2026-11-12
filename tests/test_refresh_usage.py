@@ -217,6 +217,14 @@ def test_a_failed_try_on_a_reading_dated_in_the_future_is_an_error(world):
     assert world.tick("error") == (1, "failed: get_usage is not supported in this context")
 
 
+def test_a_refresh_of_a_reading_dated_in_the_future_counts(world):
+    """After the clock is set back, the renewed reading is dated earlier than the one it replaces."""
+    world.session(age=0)
+    world.reading(age=-500)
+    assert world.tick("ok") == (0, "refreshed: fable 14%, 5h 55%, 7d 56.5%")
+    assert ru.fetched_at(str(world.cache)) == NOW + 1
+
+
 def test_the_script_run_as_a_program_uses_the_paths_the_status_line_uses(world):
     """End to end as the timer runs it, with HOME pointed at a throwaway folder."""
     home = world.tmp

@@ -121,7 +121,9 @@ def run(now=None, force=False, claude=None, sessions=None, cache=None, timeout=T
     ok, error = ask(claude, timeout, cwd)
     after = fetched_at(cache)
     # The status line reads the cache file, so a reply only counts once the file has moved.
-    if ok and after is not None and (before is None or after > before):
+    # "Moved" is a different timestamp, not a later one: after the clock is set back, the
+    # renewed reading is dated earlier than the one it replaces.
+    if ok and after is not None and after != before:
         return 0, f"refreshed: {describe(cache)}"
     if ok:
         error = "Claude Code answered but did not renew its cached reading"
